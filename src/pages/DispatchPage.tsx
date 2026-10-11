@@ -1,4 +1,4 @@
-﻿import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useMemo, useState } from 'react';
 import { AlertCircle, CheckCircle2, MapPin, Plus, RefreshCw, Send, Trash2, XCircle } from 'lucide-react';
 import { api, type AllocationBatchResponse, type AllocationReplanRequest, type BatchAllocationPatient } from '../lib/api';
 import { useSession } from '../store/hospitals';
@@ -80,7 +80,7 @@ export function DispatchPage() {
     <div className="mx-auto max-w-6xl space-y-4 p-4 lg:p-5">
       <section className="glass rounded-3xl p-5">
         <h1 className="font-display text-2xl font-semibold">Dispatch Center</h1>
-        <p className="mt-2 max-w-3xl text-sm text-slate-400">Allocate multiple patients through the backendâ€™s clinical triage, resource availability and ML-backed recommendation workflow. This supports decision-making; it is not a diagnosis or proof of hospital acceptance.</p>
+        <p className="mt-2 max-w-3xl text-sm text-slate-400">Allocate multiple patients through the backend's clinical triage, resource availability and ML-backed recommendation workflow. This supports decision-making; it is not a diagnosis or proof of hospital acceptance.</p>
         {message && <div className="mt-4 flex items-center gap-2 rounded-xl bg-signal/10 px-3 py-2 text-sm text-signal ring-1 ring-signal/25"><AlertCircle size={15} />{message}</div>}
       </section>
 
@@ -91,7 +91,7 @@ export function DispatchPage() {
           <div className="flex gap-2">
             <Button type="button" disabled={patients.length >= 50} onClick={() => setPatients((xs) => [...xs, newPatient(origin)])}><Plus size={15} />Add patient</Button>
             <Button type="button" onClick={() => setPatients([newPatient(origin)])}>Reset</Button>
-            <Button type="submit" variant="primary" disabled={busy}><Send size={15} />{busy ? 'Allocatingâ€¦' : 'Allocate batch'}</Button>
+            <Button type="submit" variant="primary" disabled={busy}><Send size={15} />{busy ? 'Allocating…' : 'Allocate batch'}</Button>
           </div>
         </div>
       </form>
@@ -136,5 +136,5 @@ function PatientCard({ patient: p, index, origin, update, remove }: { patient: D
 }
 
 function BatchResults({ batch }: { batch: AllocationBatchResponse }) {
-  return <section className="glass rounded-3xl p-5"><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-display text-lg font-semibold">Backend allocation results</h2><Pill tone="signal">Batch {batch.batch_id}</Pill></div><p className="mt-2 text-xs text-slate-500">These are authoritative server results. They are not a hospitalâ€™s clinical acceptance.</p><div className="mt-4 grid gap-3">{batch.results.map((r) => <div key={r.patient_id} className="rounded-2xl bg-black/25 p-4"><div className="flex flex-wrap items-center gap-2"><strong>{r.patient_id}</strong><Pill tone={r.status === 'ALLOCATED' ? 'ok' : 'bad'}>{r.status}</Pill>{r.hospital_id && <Pill>{r.hospital_id}</Pill>}</div><p className="mt-2 text-sm text-slate-300">{r.reason}</p>{r.estimated_travel_minutes != null && <p className="mt-1 text-xs text-slate-500">Backend travel estimate: {r.estimated_travel_minutes} min</p>}</div>)}</div></section>;
+  return <section className="glass rounded-3xl p-5"><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-display text-lg font-semibold">Backend allocation results</h2><Pill tone="signal">Batch {batch.batch_id}</Pill></div><p className="mt-2 text-xs text-slate-500">These are authoritative server results. They are not a hospital's clinical acceptance.</p><div className="mt-4 grid gap-3">{batch.results.map((r) => <div key={r.patient_id} className="rounded-2xl bg-black/25 p-4"><div className="flex flex-wrap items-center gap-2"><strong>{r.patient_id}</strong><Pill tone={r.status === 'ALLOCATED' ? 'ok' : 'bad'}>{r.status}</Pill>{r.hospital_id && <Pill>{r.hospital_id}</Pill>}</div><p className="mt-2 text-sm text-slate-300">{r.reason}</p>{r.estimated_travel_minutes != null && <p className="mt-1 text-xs text-slate-500">Backend travel estimate: {r.estimated_travel_minutes} min</p>}</div>)}</div></section>;
 }

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api, ApiError, getTokens } from '../lib/api';
+import { api, getTokens, type PublicHospitalDTO } from '../lib/api';
 import type { ActivityItem, Hospital, LatLng } from '../types';
 import { DEFAULT_ORIGIN } from '../lib/geo';
 import { latestByHospital, toDataBody, toDoctorDTO, toHospital, toPublicHospital, recordId, STATUS_TO_TRIAGE } from '../lib/mappers';
@@ -41,12 +41,25 @@ export const useHospitals = create<HospitalState>()((set, get) => ({
         try {
           const [list, records] = await Promise.all([api.listHospitals(), api.listData(500)]);
           const latest = latestByHospital(records);
-          const hospitals = list.filter((h) => h.is_active).map((h) => toHospital(h, latest.get(h.id)));
+          const activeList = list.filter((h) => h.is_active !== false);
+
+          let pubList: PublicHospitalDTO[] = [];
+          try { pubList = await api.publicHospitals(); } catch { /* ignore */ }
+
+          const hospitalMap = new Map<string, Hospital>();
+          for (const p of pubList) {
+            hospitalMap.set(p.id, toPublicHospital(p));
+          }
+          for (const h of activeList) {
+            hospitalMap.set(h.id, toHospital(h, latest.get(h.id)));
+          }
+
+          const hospitals = Array.from(hospitalMap.values());
           set({ hospitals, scope: 'full', error: null, lastSyncedAt: Date.now(), loading: false });
           return;
         } catch (e) {
-          if (!(e instanceof ApiError) || e.status !== 401) throw e;
-          // token rejected: fall through to the public list
+          console.warn('Authenticated hospital load failed, falling back to public:', e);
+          // token rejected or error: fall through to the public list
         }
       }
       const pub = await api.publicHospitals();

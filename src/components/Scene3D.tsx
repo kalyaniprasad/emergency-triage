@@ -296,14 +296,52 @@ interface Props {
 
 export function Scene3D({ origin, ranked, selectedId, onSelect, triageActive }: Props) {
   const nodes = useMemo<SceneNode[]>(() => {
-    const pts = ranked.map((r) => ({ r, ...toLocalKm(origin, r.hospital) }));
-    const ext = Math.max(1, ...pts.flatMap((p) => [Math.abs(p.x), Math.abs(p.z)]));
+    // 1. Calculate local coordinates in km relative to patient origin
+    const rawPts = ranked.map((r) => {
+      const { x, z } = toLocalKm(origin, r.hospital);
+      const dist = Math.hypot(x, z);
+      // Clamp extreme outliers (e.g. 2300km) to max 25km so local buildings aren't crushed
+      const maxKm = 25;
+      const factor = dist > maxKm ? maxKm / dist : 1;
+      return { r, x: x * factor, z: z * factor, origDist: dist };
+    });
+
+    // 2. Compute scale factor based on local area
+    const localPts = rawPts.filter((p) => p.origDist <= 40);
+    const scaleBase = localPts.length > 0 ? localPts : rawPts;
+    const ext = Math.min(25, Math.max(2, ...scaleBase.flatMap((p) => [Math.abs(p.x), Math.abs(p.z)])));
     const k = 4.8 / ext;
-    return pts.map((p, i) => ({
-      r: p.r,
-      pos: new THREE.Vector3(p.x * k, 0, p.z * k),
-      state: (p.r.suitable ? (i === 0 && triageActive ? 'best' : 'ok') : 'bad') as NodeState,
-    }));
+
+    // 3. Disperse overlapping 3D positions if coordinates are identical or near each other
+    const placed: { x: number; z: number }[] = [];
+
+    return rawPts.map((p, i) => {
+      let posX = p.x * k;
+      let posZ = p.z * k;
+
+      // Check collision with patient origin
+      if (Math.hypot(posX, posZ) < 0.8) {
+        posX += 1.4;
+        posZ += 1.4;
+      }
+
+      // Check collision with previously placed buildings
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const collision = placed.some((other) => Math.hypot(other.x - posX, other.z - posZ) < 1.4);
+        if (!collision) break;
+        const angle = (attempt * Math.PI) / 4;
+        posX += 1.5 * Math.cos(angle);
+        posZ += 1.5 * Math.sin(angle);
+      }
+
+      placed.push({ x: posX, z: posZ });
+
+      return {
+        r: p.r,
+        pos: new THREE.Vector3(posX, 0, posZ),
+        state: (p.r.suitable ? (i === 0 && triageActive ? 'best' : 'ok') : 'bad') as NodeState,
+      };
+    });
   }, [ranked, origin, triageActive]);
 
   const best = nodes.find((n) => n.state === 'best');

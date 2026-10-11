@@ -54,7 +54,7 @@ export function TriagePage() {
   }, [reqBody]);
 
   const ranked = useMemo(
-    () => (server ? toRanked(server, hospitals) : rankHospitals(hospitals, origin, required)),
+    () => (server ? toRanked(server, hospitals, origin) : rankHospitals(hospitals, origin, required)),
     [server, hospitals, origin, required],
   );
   const triageKey = chat.triage ? `${chat.triage.severity}:${chat.triage.required.join(',')}` : '';

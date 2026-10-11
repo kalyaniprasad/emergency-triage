@@ -94,6 +94,51 @@ export function TerrainMap({ origin, ranked, selectedId, onSelect, triageActive 
     tileLayerRef.current = newTiles;
   }, [activeLayer]);
 
+  // Helper: disperse overlapping coordinates so markers sharing identical lat/lng (or patient SOS) are clearly visible and separated
+  const getDispersedCoordinates = (
+    items: RankedHospital[],
+    orig: LatLng,
+  ): Map<string, { lat: number; lng: number }> => {
+    const coordsMap = new Map<string, { lat: number; lng: number }>();
+    const groups = new Map<string, RankedHospital[]>();
+
+    for (const r of items) {
+      // Group by coordinate key (within ~15-20 meters)
+      const key = `${r.hospital.lat.toFixed(4)},${r.hospital.lng.toFixed(4)}`;
+      const arr = groups.get(key) || [];
+      arr.push(r);
+      groups.set(key, arr);
+    }
+
+    for (const [, groupList] of groups) {
+      if (groupList.length === 1) {
+        const h = groupList[0].hospital;
+        // Check if hospital is right on top of the patient SOS
+        const onPatient = Math.abs(h.lat - orig.lat) < 0.0003 && Math.abs(h.lng - orig.lng) < 0.0003;
+        if (onPatient) {
+          coordsMap.set(h.id, { lat: h.lat + 0.0004, lng: h.lng + 0.0004 });
+        } else {
+          coordsMap.set(h.id, { lat: h.lat, lng: h.lng });
+        }
+      } else {
+        // Disperse multiple hospitals in a circle around the coordinate
+        const total = groupList.length;
+        const radLat = 0.00048; // ~50m
+        const radLng = 0.00048 / Math.max(0.2, Math.cos((groupList[0].hospital.lat * Math.PI) / 180));
+
+        groupList.forEach((r, idx) => {
+          const angle = (2 * Math.PI * idx) / total;
+          coordsMap.set(r.hospital.id, {
+            lat: r.hospital.lat + radLat * Math.sin(angle),
+            lng: r.hospital.lng + radLng * Math.cos(angle),
+          });
+        });
+      }
+    }
+
+    return coordsMap;
+  };
+
   // Update Markers, Ultra-Detailed 3D Hospital Icons, and Routes
   useEffect(() => {
     const map = mapInstanceRef.current;
@@ -102,11 +147,14 @@ export function TerrainMap({ origin, ranked, selectedId, onSelect, triageActive 
 
     group.clearLayers();
 
+    // Compute dispersed visual positions for all hospitals
+    const dispersed = getDispersedCoordinates(ranked, origin);
+
     // 1. Patient SOS Location Marker
     const patientIcon = L.divIcon({
       className: 'patient-custom-marker',
       html: `
-        <div style="position: relative; width: 48px; height: 48px; display: flex; align-items: center; justify-content: center;">
+        <div style="position: relative; width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; z-index: 500;">
           <div style="position: absolute; width: 48px; height: 48px; border-radius: 50%; background: rgba(255,59,87,0.35); animation: ping 1.6s ease-out infinite;"></div>
           <div style="position: absolute; width: 28px; height: 28px; border-radius: 50%; background: #ff3b57; border: 3px solid #ffffff; box-shadow: 0 0 20px rgba(255,59,87,0.9); display: flex; align-items: center; justify-content: center; color: white;">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>
@@ -120,7 +168,7 @@ export function TerrainMap({ origin, ranked, selectedId, onSelect, triageActive 
       iconAnchor: [24, 24],
     });
 
-    const patientMarker = L.marker([origin.lat, origin.lng], { icon: patientIcon });
+    const patientMarker = L.marker([origin.lat, origin.lng], { icon: patientIcon, zIndexOffset: 800 });
     patientMarker.bindPopup(`
       <div style="font-family: inherit; font-size: 12px; color: #0c1220; padding: 4px;">
         <strong style="color: #ff3b57;">Incident / Patient Location</strong>
@@ -136,6 +184,7 @@ export function TerrainMap({ origin, ranked, selectedId, onSelect, triageActive 
       const isTop = idx === 0 && triageActive;
       const isSelected = r.hospital.id === selectedId;
       const h = r.hospital;
+      const pos = dispersed.get(h.id) ?? { lat: h.lat, lng: h.lng };
 
       const primaryColor = isTop ? '#06b6d4' : r.suitable ? '#3b82f6' : '#ef4444';
       const glowEffect = isTop
@@ -238,11 +287,12 @@ export function TerrainMap({ origin, ranked, selectedId, onSelect, triageActive 
         iconAnchor: [42, 84],
       });
 
-      const marker = L.marker([h.lat, h.lng], { icon: hospitalIcon });
+      const zIndex = isTop ? 900 : isSelected ? 850 : 300 - idx;
+      const marker = L.marker([pos.lat, pos.lng], { icon: hospitalIcon, zIndexOffset: zIndex });
 
       marker.on('click', () => {
         onSelect(h.id);
-        map.flyTo([h.lat, h.lng], 14, { duration: 0.8 });
+        map.flyTo([pos.lat, pos.lng], 14, { duration: 0.8 });
       });
 
       marker.bindPopup(`
@@ -270,7 +320,7 @@ export function TerrainMap({ origin, ranked, selectedId, onSelect, triageActive 
         const polyline = L.polyline(
           [
             [origin.lat, origin.lng],
-            [h.lat, h.lng],
+            [pos.lat, pos.lng],
           ],
           {
             color: primaryColor,
@@ -283,14 +333,30 @@ export function TerrainMap({ origin, ranked, selectedId, onSelect, triageActive 
       }
     });
 
-    // Fit bounds
+    // 4. Fit bounds: filter out extreme geographical outliers (> 120km) so the map doesn't zoom out across the country
+    const localHospitals = ranked
+      .filter((r) => {
+        if (r.hospital.id === selectedId) return true;
+        const d = r.distanceKm || 0;
+        return d <= 120;
+      })
+      .map((r) => r.hospital);
+
+    const targetHospitals = localHospitals.length > 0 ? localHospitals : ranked.slice(0, 5).map((r) => r.hospital);
+
     const points: [number, number][] = [
       [origin.lat, origin.lng],
-      ...ranked.map((r): [number, number] => [r.hospital.lat, r.hospital.lng]),
+      ...targetHospitals.map((h): [number, number] => {
+        const p = dispersed.get(h.id) ?? { lat: h.lat, lng: h.lng };
+        return [p.lat, p.lng];
+      }),
     ];
+
     if (points.length > 1) {
       const bounds = L.latLngBounds(points);
-      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 });
+      map.fitBounds(bounds, { padding: [55, 55], maxZoom: 15 });
+    } else {
+      map.setView([origin.lat, origin.lng], 13);
     }
   }, [origin, ranked, selectedId, triageActive, onSelect]);
 

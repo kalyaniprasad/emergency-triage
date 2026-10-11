@@ -1,6 +1,7 @@
 import type { LatLng, Hospital, PatientCase, RankedHospital, FacilityKey } from '../types';
 import type { RecommendRequest, RecommendResponse, LiveSnapshot } from './api';
 import { deriveFacilities } from './capability';
+import { etaMinutes, haversineKm } from './geo';
 import { statusFromTriage } from './mappers';
 import { clamp } from './util';
 
@@ -44,14 +45,16 @@ function fromLive(base: Hospital, live?: LiveSnapshot | null): Hospital {
   };
 }
 
-/** Converts the server response into the RankedHospital[] shape the existing components already use. */
-export function toRanked(res: RecommendResponse, known: Hospital[]): RankedHospital[] {
+/** Converts the server response into the RankedHospital[] shape while preserving all known database hospitals. */
+export function toRanked(res: RecommendResponse, known: Hospital[], origin?: LatLng): RankedHospital[] {
   const byId = new Map(known.map((h) => [h.id, h]));
   const synthetic = (i: number, k: string) => `${k}${i}` as FacilityKey; // unique React keys only
+  const seenIds = new Set<string>();
 
   const ranked: RankedHospital[] = [...res.recommended]
     .sort((a, b) => a.rank - b.rank)
     .map((r) => {
+      seenIds.add(r.hospital_id);
       const stored = byId.get(r.hospital_id);
       const base: Hospital = stored ?? {
         id: r.hospital_id, name: r.name, area: r.address, lat: r.latitude, lng: r.longitude, status: 'open', loadPct: 0,
@@ -78,19 +81,56 @@ export function toRanked(res: RecommendResponse, known: Hospital[]): RankedHospi
       };
     });
 
-  const rest: RankedHospital[] = res.not_ranked.flatMap((n) => {
+  const rest: RankedHospital[] = (res.not_ranked ?? []).map((n) => {
+    seenIds.add(n.hospital_id);
     const stored = byId.get(n.hospital_id);
-    if (!stored) return [];
-    return [{
-      hospital: fromLive(stored, n.live),
-      distanceKm: n.distance_km ?? 0,
-      etaMin: Math.round(n.estimated_travel_minutes ?? 0),
+    const base: Hospital = stored ?? {
+      id: n.hospital_id,
+      name: n.name,
+      area: '',
+      lat: origin?.lat ?? 18.6489,
+      lng: origin?.lng ?? 73.7716,
+      status: 'busy',
+      loadPct: 0,
+      beds: { total: 0, available: 0 },
+      icu: { total: 0, available: 0 },
+      ventilators: { total: 0, available: 0 },
+      oxygen: 0,
+      doctorsTotal: 0,
+      doctorsAvailable: 0,
+      facilities: { trauma: false, cardiac: false, neuro: false, burn: false },
+      doctors: [],
+      hasOpsData: !!n.live,
+      updatedAt: Date.now(),
+    };
+    const dist = n.distance_km ?? (origin ? haversineKm(origin, base) : 0);
+    const eta = n.estimated_travel_minutes != null ? Math.round(n.estimated_travel_minutes) : etaMinutes(dist);
+    return {
+      hospital: fromLive(base, n.live),
+      distanceKm: dist,
+      etaMin: eta,
       score: 0,
       suitable: false,
       matched: [],
       missing: [{ key: synthetic(0, 'n'), detail: n.detail || n.reason.replace(/_/g, ' ').toLowerCase() }],
-    }];
+    };
   });
 
-  return [...ranked, ...rest];
+  // Preserve ANY hospital in the database that was not in server response
+  const unrankedKnown: RankedHospital[] = known
+    .filter((h) => !seenIds.has(h.id))
+    .map((h) => {
+      const dist = origin ? haversineKm(origin, h) : 0;
+      return {
+        hospital: h,
+        distanceKm: dist,
+        etaMin: etaMinutes(dist),
+        score: Math.max(10, 100 - Math.round(h.loadPct * 0.8)),
+        suitable: h.status !== 'diverting',
+        matched: [{ key: synthetic(0, 'k'), detail: 'Active hospital in network database' }],
+        missing: h.status === 'diverting' ? [{ key: synthetic(0, 'd'), detail: 'Hospital status is diverting' }] : [],
+      };
+    });
+
+  return [...ranked, ...rest, ...unrankedKnown];
 }

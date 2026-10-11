@@ -62,3 +62,11 @@ accept an allocation ID only when another backend integration supplies one. A pr
 allocation dashboard requires backend read endpoints. The current API has no documented idempotency-key
 contract, so the UI prevents duplicate clicks while a request is pending but cannot deduplicate a
 network retry after the browser loses the response; that requires backend support.
+
+## Targeted hospital requests
+
+The triage hospital cards can send a single patient request to one real backend hospital through
+`POST /triage/hospital-requests`. The backend re-assesses the patient, stores the request, and
+requires the receiving hospital's JWT for the incoming inbox and accept/reject actions. The patient
+UI polls the minimal status endpoint and only shows allocation after the backend confirms acceptance
+and reservation. Request records and clinical details are never stored in browser storage.

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api, type RecommendResponse } from '../lib/api';
+import { api, type HospitalRequestStatusResponse, type RecommendResponse } from '../lib/api';
 import { buildRecommendRequest, toRanked } from '../lib/recommend';
 import { Map as MapIcon, Box, Sparkles, Building2, AlertCircle, Loader2, Info } from 'lucide-react';
 import { ChatPanel } from '../components/ChatPanel';
@@ -10,7 +10,9 @@ import { useChat } from '../hooks/useChat';
 import { rankHospitals } from '../lib/ranking';
 import { useHospitals, useSession } from '../store/hospitals';
 import type { FacilityKey } from '../types';
-import { Badge } from '../components/ui';
+import { Badge, Button, Pill } from '../components/ui';
+import type { RankedHospital } from '../types';
+import { uid } from '../lib/util';
 
 const DEFAULT_REQUIRED: FacilityKey[] = ['emergency'];
 
@@ -25,6 +27,10 @@ export function TriagePage() {
   const chat = useChat();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mapMode, setMapMode] = useState<MapVisualizationMode>('terrain');
+  const [requestTarget, setRequestTarget] = useState<RankedHospital | null>(null);
+  const [requestStatus, setRequestStatus] = useState<HospitalRequestStatusResponse | null>(null);
+  const [requestBusy, setRequestBusy] = useState(false);
+  const requestPatientId = useRef(`patient-${uid()}`);
 
   const required = chat.triage?.required ?? DEFAULT_REQUIRED;
 
@@ -74,6 +80,34 @@ export function TriagePage() {
     }
     prev.current = { top: topId, key: triageKey };
   }, [topId, triageKey, ranked, chat]);
+
+  useEffect(() => {
+    if (!requestStatus || requestStatus.status !== 'PENDING_HOSPITAL_RESPONSE') return;
+    const poll = () => void api.hospitalRequestStatus(requestStatus.request_id).then(setRequestStatus).catch(() => undefined);
+    const timer = window.setInterval(() => { if (!document.hidden) poll(); }, 5000);
+    return () => window.clearInterval(timer);
+  }, [requestStatus]);
+
+  const sendHospitalRequest = async () => {
+    if (!requestTarget || !chat.triage) return;
+    setRequestBusy(true);
+    try {
+      const { max_results: _maxResults, ...clinical } = buildRecommendRequest(chat.patient, origin);
+      const created = await api.createHospitalRequest({
+        ...clinical,
+        patient_id: requestPatientId.current,
+        target_hospital_id: requestTarget.hospital.id,
+      }, `hospital-request-${requestPatientId.current}-${requestTarget.hospital.id}`);
+      setRequestStatus(created);
+      setRequestTarget(null);
+    } catch (e) {
+      setRequestStatus({
+        request_id: '', target_hospital_id: requestTarget.hospital.id, target_hospital_name: requestTarget.hospital.name,
+        status: 'UNAVAILABLE', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+        reason: e instanceof Error ? e.message : 'The hospital request could not be sent.',
+      });
+    } finally { setRequestBusy(false); }
+  };
 
   return (
     <div className="grid gap-4 p-4 lg:h-full lg:grid-cols-[minmax(400px,5fr)_7fr] lg:p-5">
@@ -197,9 +231,46 @@ export function TriagePage() {
             triageActive={!!chat.triage}
             selectedId={selectedId}
             onSelect={setSelectedId}
+            onRequest={setRequestTarget}
           />
         </div>
       </div>
+      {requestTarget && chat.triage && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="request-hospital-title">
+          <div className="glass max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-3xl p-5">
+            <h2 id="request-hospital-title" className="font-display text-xl font-semibold">Request {requestTarget.hospital.name}</h2>
+            <p className="mt-1 text-sm text-slate-400">{requestTarget.hospital.area}</p>
+            <div className="mt-4 grid gap-2 text-sm text-slate-300 sm:grid-cols-2">
+              <div><span className="text-slate-500">Severity:</span> {chat.triage.severity} · {chat.triage.category}</div>
+              <div><span className="text-slate-500">Urgency:</span> {server?.triage.urgency_level ?? chat.triage.severity}</div>
+              <div><span className="text-slate-500">Patient location:</span> {origin.lat.toFixed(4)}, {origin.lng.toFixed(4)}</div>
+              <div><span className="text-slate-500">Estimate:</span> {requestTarget.etaMin} min (routing fallback)</div>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {(server?.triage.required_resources ?? required).map((resource) => <Pill key={resource} tone="signal">{resource}</Pill>)}
+              {(server?.triage.required_specialists ?? []).map((specialist) => <Pill key={specialist}>{specialist}</Pill>)}
+            </div>
+            <div className="mt-4 rounded-xl bg-warn/10 p-3 text-xs text-warn ring-1 ring-warn/25">
+              Reported capacity is decision-support data, not a confirmed reservation. This request remains pending until the hospital accepts and the backend successfully reserves resources.
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button disabled={requestBusy} onClick={() => setRequestTarget(null)}>Cancel</Button>
+              <Button variant="primary" disabled={requestBusy} onClick={() => void sendHospitalRequest()}>{requestBusy ? 'Sending…' : 'Confirm Request'}</Button>
+            </div>
+          </div>
+        </div>
+      )}
+      {requestStatus && !requestTarget && (
+        <div className="fixed bottom-5 right-5 z-40 w-[min(28rem,calc(100vw-2rem))] glass rounded-2xl p-4 shadow-2xl">
+          <div className="flex items-center justify-between gap-2"><strong>Hospital request</strong><Pill tone={requestStatus.status === 'ALLOCATED' ? 'ok' : requestStatus.status === 'REJECTED' ? 'bad' : 'warn'}>{requestStatus.status}</Pill></div>
+          <p className="mt-2 text-sm text-slate-300">{requestStatus.reason ?? (requestStatus.status === 'PENDING_HOSPITAL_RESPONSE' ? 'Waiting for the hospital to respond.' : 'The backend has updated this request.')}</p>
+          {requestStatus.allocation_id && <p className="mt-1 text-xs text-slate-500">Allocation confirmed by backend: {requestStatus.allocation_id}</p>}
+          <div className="mt-3 flex items-center gap-3">
+            {requestStatus.status === 'REJECTED' && <button className="text-xs font-semibold text-signal underline" onClick={() => setRequestStatus(null)}>Choose another hospital</button>}
+            <button className="text-xs text-slate-400 underline" onClick={() => setRequestStatus(null)}>Dismiss</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

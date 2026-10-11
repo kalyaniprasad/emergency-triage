@@ -4,7 +4,7 @@ import { Check, ChevronDown, Phone, Search, SearchX, TriangleAlert, X } from 'lu
 import type { FacilityKey, RankedHospital } from '../types';
 import { FACILITY_LABEL, capability, loadLabel } from '../lib/capability';
 import { cn } from '../lib/util';
-import { Meter, Pill } from './ui';
+import { Button, Meter, Pill } from './ui';
 
 const FILTERS: FacilityKey[] = ['icu', 'trauma', 'cardiac', 'neuro', 'burn'];
 type Sort = 'best' | 'nearest' | 'load';
@@ -15,9 +15,10 @@ interface Props {
   triageActive: boolean;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  onRequest: (hospital: RankedHospital) => void;
 }
 
-export function HospitalList({ ranked, required, triageActive, selectedId, onSelect }: Props) {
+export function HospitalList({ ranked, required, triageActive, selectedId, onSelect, onRequest }: Props) {
   const [query, setQuery] = useState('');
   const [filters, setFilters] = useState<FacilityKey[]>([]);
   const [openOnly, setOpenOnly] = useState(false);
@@ -77,7 +78,7 @@ export function HospitalList({ ranked, required, triageActive, selectedId, onSel
         <AnimatePresence mode="popLayout" initial={false}>
           {rows.map((r) => (
             <HospitalCard key={r.hospital.id} r={r} required={required} triageActive={triageActive} isBest={triageActive && ranked[0]?.hospital.id === r.hospital.id && r.suitable}
-              open={selectedId === r.hospital.id} onToggle={() => onSelect(selectedId === r.hospital.id ? null : r.hospital.id)} />
+              open={selectedId === r.hospital.id} onToggle={() => onSelect(selectedId === r.hospital.id ? null : r.hospital.id)} onRequest={onRequest} />
           ))}
         </AnimatePresence>
         {rows.length === 0 && (
@@ -92,7 +93,7 @@ export function HospitalList({ ranked, required, triageActive, selectedId, onSel
   );
 }
 
-function HospitalCard({ r, required, triageActive, isBest, open, onToggle }: { r: RankedHospital; required: FacilityKey[]; triageActive: boolean; isBest: boolean; open: boolean; onToggle: () => void }) {
+function HospitalCard({ r, required, triageActive, isBest, open, onToggle, onRequest }: { r: RankedHospital; required: FacilityKey[]; triageActive: boolean; isBest: boolean; open: boolean; onToggle: () => void; onRequest: (hospital: RankedHospital) => void }) {
   const h = r.hospital;
   const onDuty = h.doctors.filter((d) => d.onDuty);
   const statusTone = h.status === 'open' ? 'ok' : h.status === 'busy' ? 'warn' : 'bad';
@@ -151,6 +152,9 @@ function HospitalCard({ r, required, triageActive, isBest, open, onToggle }: { r
                 </div>
               </div>
               {h.phone && <a href={`tel:${h.phone.replace(/\s/g, '')}`} className="inline-flex items-center gap-2 rounded-xl bg-white/6 px-3.5 py-2 text-sm font-semibold ring-1 ring-inset ring-white/10 hover:bg-white/10"><Phone size={15} />{h.phone}</a>}
+              {triageActive && r.suitable && h.status !== 'diverting' && (
+                <Button variant="primary" onClick={() => onRequest(r)}>Request This Hospital</Button>
+              )}
             </div>
           </motion.div>
         )}

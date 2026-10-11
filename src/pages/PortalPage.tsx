@@ -5,7 +5,7 @@ import {
   Activity, AlertCircle, BedDouble, CheckCircle2, ExternalLink, HeartPulse, Loader2, LogIn, Plus, ShieldCheck, Trash2, UserCheck, UserRound, Wind, Wrench, XCircle,
 } from 'lucide-react';
 import type { Capability, Doctor, Hospital, HospitalStatus, Resource } from '../types';
-import { api, type HospitalDataDTO } from '../lib/api';
+import { api, type HospitalDataDTO, type HospitalRequestInboxItem } from '../lib/api';
 import { ALL_FACILITIES, FACILITY_LABEL, SPECIALIST, capability, loadLabel } from '../lib/capability';
 import { recordId, recordTime, statusFromTriage } from '../lib/mappers';
 import { clamp, cn, timeAgo, uid } from '../lib/util';
@@ -173,12 +173,52 @@ function Editor({ h, update, now, error, logout, registrationNumber }: { h: Hosp
         </div>
 
         <div className="space-y-4">
+          <IncomingRequests />
           <RejectionCard />
           <DoctorsCard h={h} upd={upd} />
           <HistoryCard hospitalId={h.id} version={h.updatedAt} now={now} />
         </div>
       </div>
     </div>
+  );
+}
+
+function IncomingRequests() {
+  const [requests, setRequests] = useState<HospitalRequestInboxItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const refresh = () => api.incomingHospitalRequests().then((rows) => { setRequests(rows); setError(null); }).catch((e: unknown) => setError(e instanceof Error ? e.message : 'Could not load incoming requests.'));
+  useEffect(() => {
+    void refresh();
+    const timer = window.setInterval(() => { if (!document.hidden) void refresh(); }, 7000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const decide = async (item: HospitalRequestInboxItem, accept: boolean) => {
+    const reason = accept ? 'Accepted after hospital review.' : window.prompt('Why is this request being rejected?')?.trim();
+    if (!reason) return;
+    setBusy(item.request_id); setError(null);
+    try {
+      if (accept) await api.acceptHospitalRequest(item.request_id);
+      else await api.rejectHospitalRequest(item.request_id, { reason });
+      await refresh();
+    } catch (e) { setError(e instanceof Error ? e.message : 'The request decision failed.'); }
+    finally { setBusy(null); }
+  };
+  return (
+    <Card title="Incoming Patient Requests" icon={<HeartPulse size={16} />}>
+      {error && <p className="mb-3 text-xs text-brand-soft">{error}</p>}
+      {requests === null ? <p className="text-sm text-slate-500">Loading incoming requests…</p>
+        : requests.length === 0 ? <p className="text-sm text-slate-500">No pending requests addressed to this hospital.</p>
+        : <div className="space-y-3">{requests.map((item) => (
+          <div key={item.request_id} className="rounded-2xl bg-black/25 p-3">
+            <div className="flex flex-wrap items-center gap-2"><strong className="text-sm">{item.patient_id}</strong><Pill tone={item.severity === 'critical' ? 'bad' : item.severity === 'high' ? 'warn' : 'neutral'}>{item.severity} · {item.urgency_level}</Pill><Pill>{item.status}</Pill></div>
+            <p className="mt-1 text-xs text-slate-400">{item.category} · symptoms: {item.symptoms.join(', ') || 'not provided'}</p>
+            <p className="mt-1 text-xs text-slate-400">Required: {item.required_resources.join(', ') || 'none'}{item.required_specialists.length ? ` · specialists: ${item.required_specialists.join(', ')}` : ''}</p>
+            <p className="mt-1 text-xs text-slate-500">Location: {item.latitude.toFixed(4)}, {item.longitude.toFixed(4)}{item.estimated_travel_minutes != null ? ` · estimate ${item.estimated_travel_minutes} min` : ''}</p>
+            <div className="mt-3 flex gap-2"><Button variant="primary" disabled={busy !== null} onClick={() => void decide(item, true)}>Accept</Button><Button variant="danger" disabled={busy !== null} onClick={() => void decide(item, false)}>Reject</Button></div>
+          </div>
+        ))}</div>}
+    </Card>
   );
 }
 

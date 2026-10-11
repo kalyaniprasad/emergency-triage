@@ -189,6 +189,41 @@ export interface AllocationActionResponse {
   history?: AllocationEvent[];
 }
 
+export type HospitalRequestStatus = 'PENDING_HOSPITAL_RESPONSE' | 'ALLOCATED' | 'REJECTED' | 'UNAVAILABLE';
+export interface HospitalRequestCreate extends RecommendRequest {
+  patient_id: string;
+  target_hospital_id: string;
+}
+export interface HospitalRequestStatusResponse {
+  request_id: string;
+  target_hospital_id: string;
+  target_hospital_name: string;
+  status: HospitalRequestStatus;
+  created_at: string;
+  updated_at: string;
+  decided_at?: string | null;
+  reason?: string | null;
+  allocation_id?: string | null;
+  required_resources?: string[];
+  required_specialists?: string[];
+  reserved_resources?: Record<string, number>;
+}
+export interface HospitalRequestInboxItem extends HospitalRequestStatusResponse {
+  patient_id: string;
+  severity: string;
+  urgency_level: string;
+  category: string;
+  symptoms: string[];
+  vitals: Record<string, number>;
+  age?: number | null;
+  latitude: number;
+  longitude: number;
+  estimated_travel_minutes?: number | null;
+  required_resources: string[];
+  required_specialists: string[];
+  reserved_resources: Record<string, number>;
+}
+
 /* ---------- token storage ---------- */
 
 interface Tokens { access: string; refresh: string }
@@ -327,6 +362,18 @@ export const api = {
     request<AllocationActionResponse>(`/triage/allocations/${encodeURIComponent(id)}/cancel`, { method: 'POST' }),
   completeAllocation: (id: string) =>
     request<AllocationActionResponse>(`/triage/allocations/${encodeURIComponent(id)}/complete`, { method: 'POST' }),
+  createHospitalRequest: (b: HospitalRequestCreate, idempotencyKey: string) =>
+    request<HospitalRequestStatusResponse & { required_resources: string[]; required_specialists: string[] }>('/triage/hospital-requests', {
+      method: 'POST', body: b, headers: { 'Idempotency-Key': idempotencyKey },
+    }),
+  hospitalRequestStatus: (id: string) =>
+    request<HospitalRequestStatusResponse>(`/triage/hospital-requests/${encodeURIComponent(id)}/status`),
+  incomingHospitalRequests: () =>
+    request<HospitalRequestInboxItem[]>('/triage/hospital-requests/incoming', { auth: true }),
+  acceptHospitalRequest: (id: string) =>
+    request<HospitalRequestStatusResponse & { reserved_resources: Record<string, number> }>(`/triage/hospital-requests/${encodeURIComponent(id)}/accept`, { method: 'POST', auth: true }),
+  rejectHospitalRequest: (id: string, b: AllocationDecisionRequest) =>
+    request<HospitalRequestStatusResponse>(`/triage/hospital-requests/${encodeURIComponent(id)}/reject`, { method: 'POST', body: b, auth: true }),
   publicHospitals: () => request<PublicHospitalDTO[]>('/hospitals/public'),
 
   listHospitals: () => request<HospitalDTO[]>('/hospitals/', { auth: true }),

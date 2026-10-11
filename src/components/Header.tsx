@@ -11,6 +11,7 @@ import {
   UserCheck,
   Menu,
   X,
+  RadioTower,
 } from 'lucide-react';
 import { useSession, useHospitals } from '../store/hospitals';
 import { useAuth } from '../store/auth';
@@ -68,6 +69,9 @@ export function Header() {
           <NavLink to="/portal" className={link}>
             <Building2 size={15} />
             Hospital Portal
+          </NavLink>
+          <NavLink to="/dispatch" className={link}>
+            <RadioTower size={15} /> Dispatch Center
           </NavLink>
           <NavLink to="/register" className={link}>
             <PlusCircle size={15} className="text-signal" />
@@ -154,6 +158,13 @@ export function Header() {
             className={link}
           >
             <Building2 size={16} /> Hospital Portal
+          </NavLink>
+          <NavLink
+            to="/dispatch"
+            onClick={() => setMobileMenuOpen(false)}
+            className={link}
+          >
+            <RadioTower size={16} /> Dispatch Center
           </NavLink>
           <NavLink
             to="/register"

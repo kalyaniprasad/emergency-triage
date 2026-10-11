@@ -173,11 +173,43 @@ function Editor({ h, update, now, error, logout, registrationNumber }: { h: Hosp
         </div>
 
         <div className="space-y-4">
+          <RejectionCard />
           <DoctorsCard h={h} upd={upd} />
           <HistoryCard hospitalId={h.id} version={h.updatedAt} now={now} />
         </div>
       </div>
     </div>
+  );
+}
+
+function RejectionCard() {
+  const [allocationId, setAllocationId] = useState('');
+  const [reason, setReason] = useState('');
+  const [notes, setNotes] = useState('');
+  const [pending, setPending] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const submit = async () => {
+    if (!allocationId.trim() || !reason.trim()) { setStatus('Allocation ID and reason are required.'); return; }
+    setPending(true); setStatus(null);
+    try {
+      const response = await api.rejectAllocation(allocationId.trim(), { reason: reason.trim(), ...(notes.trim() ? { notes: notes.trim() } : {}) });
+      setStatus(`Backend response: ${response.status}${response.hospital_id ? ` · reassigned to ${response.hospital_id}` : ''}`);
+      setReason(''); setNotes('');
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : 'Could not reject allocation.');
+    } finally { setPending(false); }
+  };
+  return (
+    <Card title="Reject an assigned allocation" icon={<XCircle size={16} />}>
+      <p className="mb-3 text-xs text-slate-400">No hospital allocation-list endpoint is available, so enter an allocation ID supplied by the backend. The logged-in hospital JWT determines authorization; do not enter a hospital ID.</p>
+      <div className="space-y-2">
+        <input value={allocationId} onChange={(e) => setAllocationId(e.target.value)} placeholder="Allocation ID" aria-label="Allocation ID" className="w-full rounded-xl bg-black/30 px-3 py-2 text-sm outline-none ring-1 ring-inset ring-white/10 focus:ring-signal/60" />
+        <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={400} placeholder="Reason (required)" aria-label="Rejection reason" className="w-full rounded-xl bg-black/30 px-3 py-2 text-sm outline-none ring-1 ring-inset ring-white/10 focus:ring-signal/60" />
+        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={1000} placeholder="Notes (optional)" aria-label="Rejection notes" rows={2} className="w-full rounded-xl bg-black/30 px-3 py-2 text-sm outline-none ring-1 ring-inset ring-white/10 focus:ring-signal/60" />
+        <Button variant="danger" disabled={pending} onClick={() => void submit()}><XCircle size={15} />{pending ? 'Rejecting…' : 'Reject allocation'}</Button>
+        {status && <p className="text-xs text-slate-300">{status}</p>}
+      </div>
+    </Card>
   );
 }
 
@@ -289,4 +321,3 @@ function HistoryCard({ hospitalId, version, now }: { hospitalId: string; version
     </Card>
   );
 }
-

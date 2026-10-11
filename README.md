@@ -16,6 +16,7 @@ npm run build      # type-check + production build
 |-----------|--------------|
 | `/`       | Triage console: chat assessment, 3D hospital map, searchable and filterable hospital list |
 | `/portal` | Hospital portal: update load, beds, ICU, ventilators, ER bays, blood, specialist departments, doctors on duty and rooms |
+| `/dispatch` | Dispatch Center: validate and submit 1–50 patients to the backend allocation service, inspect authoritative batch results, and run lifecycle actions when an allocation ID is available |
 
 **Real-time demo:** open `/` in one tab and `/portal` in another. Edit a hospital in the portal
 (or press "Simulate rush") and the triage tab re-ranks instantly and posts a re-routing message in the chat.
@@ -47,3 +48,17 @@ src/
 - **Hospitals:** replace the store's seed data with an API fetch plus a live channel.
 
 Decision-support prototype only. It does not diagnose, and it uses simulated hospital data.
+
+## Dispatch backend dependencies
+
+The Dispatch Center calls `POST /triage/allocations/batch` through the shared API client. Replanning,
+cancellation and completion call the corresponding allocation endpoints, while hospital rejection
+uses the authenticated hospital JWT at `POST /triage/allocations/{allocation_id}/reject`.
+
+The current backend batch response does not return allocation IDs and does not expose a GET endpoint
+for allocation details or hospital assignments. Therefore the frontend displays only the batch
+response it received and does not claim to provide persistent allocation history. Lifecycle controls
+accept an allocation ID only when another backend integration supplies one. A production active
+allocation dashboard requires backend read endpoints. The current API has no documented idempotency-key
+contract, so the UI prevents duplicate clicks while a request is pending but cannot deduplicate a
+network retry after the browser loses the response; that requires backend support.

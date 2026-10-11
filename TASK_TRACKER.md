@@ -1,7 +1,7 @@
 # 📋 Emergency Triage UI - Task Tracker & Status
 
 **Last Updated:** 2026-10-10  
-**Status:** All Tasks Completed Successfully ✅
+**Status:** Dispatch Center and allocation integration added; backend read/id gaps documented.
 
 ---
 
@@ -22,6 +22,9 @@ Ultra-modern clinical decision-support & hospital dispatch platform with Google 
 | ✅ **Completed** | `TASK-06` | **Shadcn / Tweakcn UI Design System & React Bits Animations** | Built `SpotlightCard` (cursor-following radial glow), `ShimmerButton` (shimmering gradient borders), `Badge` tokens, and polished dark mode aesthetics. |
 | ✅ **Completed** | `TASK-07` | **Real-Time Telemetry Data Updating & Sync** | Enhanced `PortalPage.tsx` with doctor rosters, room states, bed adjustments, and cross-tab storage event sync for instant re-ranking. |
 | ✅ **Completed** | `TASK-08` | **Validation & Production Verification** | Verified clean TypeScript compile (`tsc --noEmit`) and production build (`vite build`). |
+| ✅ **Completed** | `TASK-09` | **Dispatch Center** | Added `/dispatch`, validated 1–50 patient batch intake, backend allocation submission, result display and lifecycle controls. |
+| ✅ **Completed** | `TASK-10` | **Hospital Allocation Rejection** | Added authenticated manual allocation-ID rejection to the hospital portal. |
+| ⚠️ **Backend Gap** | `TASK-11` | **Persistent Allocation Reads** | Backend currently returns no allocation IDs from batch results and exposes no allocation read/list endpoint. |
 
 ---
 

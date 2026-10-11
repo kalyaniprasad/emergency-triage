@@ -5,6 +5,7 @@ import { TriagePage } from './pages/TriagePage';
 import { PortalPage } from './pages/PortalPage';
 import { RegisterHospitalPage } from './pages/RegisterHospitalPage';
 import { HospitalLoginPage } from './pages/HospitalLoginPage';
+import { DispatchPage } from './pages/DispatchPage';
 import { useHospitals } from './store/hospitals';
 import { useAuth } from './store/auth';
 
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="/portal" element={<PortalPage />} />
           <Route path="/register" element={<RegisterHospitalPage />} />
           <Route path="/login" element={<HospitalLoginPage />} />
+          <Route path="/dispatch" element={<DispatchPage />} />
         </Routes>
       </main>
       <footer className="border-t border-white/5 bg-slate-950/40 px-6 py-2.5 text-center text-xs text-slate-400">

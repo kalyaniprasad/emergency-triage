@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Backend client for https://ai-linklife-backend.vercel.app
  *  - access + refresh tokens are stored in localStorage
  *  - protected calls send `Authorization: Bearer <access_token>`
@@ -140,6 +140,55 @@ export interface RecommendResponse {
   disclaimer: string;
 }
 
+export type AllocationStatus = 'ALLOCATED' | 'UNALLOCATED' | 'REJECTED' | 'CANCELLED' | 'COMPLETED';
+export interface BatchAllocationPatient {
+  patient_id: string;
+  latitude: number;
+  longitude: number;
+  symptoms: string[];
+  vitals: RecommendRequest['vitals'];
+  age?: number;
+  described_as_severe?: boolean;
+  created_at?: string;
+}
+export interface BatchAllocationRequest { patients: BatchAllocationPatient[] }
+export interface AllocationEvent {
+  event?: string;
+  status?: AllocationStatus;
+  reason?: string;
+  notes?: string | null;
+  created_at?: string;
+  hospital_id?: string | null;
+}
+export interface AllocationResult {
+  patient_id: string;
+  allocation_id?: string;
+  status: AllocationStatus;
+  priority?: number | string;
+  severity?: string;
+  hospital_id?: string | null;
+  estimated_travel_minutes?: number | null;
+  reserved_resources: string[] | Record<string, number>;
+  reason: string;
+  history?: AllocationEvent[];
+}
+export interface AllocationBatchResponse { batch_id: string; generated_at: string; results: AllocationResult[] }
+export interface AllocationDecisionRequest { reason: string; notes?: string }
+export interface AllocationReplanRequest {
+  reason: string;
+  notes?: string;
+  updated_travel_times?: Record<string, number>;
+  latitude?: number;
+  longitude?: number;
+}
+export interface AllocationActionResponse {
+  allocation_id: string;
+  status: AllocationStatus;
+  hospital_id?: string | null;
+  reason?: string;
+  history?: AllocationEvent[];
+}
+
 /* ---------- token storage ---------- */
 
 interface Tokens { access: string; refresh: string }
@@ -216,17 +265,17 @@ async function refreshTokens(): Promise<boolean> {
   return refreshing;
 }
 
-interface Opts { method?: string; body?: unknown; auth?: boolean | 'optional' }
+interface Opts { method?: string; body?: unknown; auth?: boolean | 'optional'; headers?: Record<string, string> }
 
-async function request<T>(path: string, { method = 'GET', body, auth = false }: Opts = {}, retried = false): Promise<T> {
+async function request<T>(path: string, { method = 'GET', body, auth = false, headers: extraHeaders }: Opts = {}, retried = false): Promise<T> {
   const headers: Record<string, string> = {};
   if (body !== undefined) headers['Content-Type'] = 'application/json';
+  Object.assign(headers, extraHeaders);
   if (auth) {
     const t = getTokens();
     if (t) headers.Authorization = `Bearer ${t.access}`;
     else if (auth === true) throw new ApiError(401, 'Not signed in');
   }
-
   const send = (p: string) => fetch(`${BASE}${p}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
 
   let res: Response;
@@ -245,7 +294,7 @@ async function request<T>(path: string, { method = 'GET', body, auth = false }: 
   }
 
   if (res.status === 401 && auth && getTokens() && !retried) {
-    if (await refreshTokens()) return request<T>(path, { method, body, auth }, true);
+    if (await refreshTokens()) return request<T>(path, { method, body, auth, headers: extraHeaders }, true);
     clearTokens();
     window.dispatchEvent(new Event(LOGOUT_EVENT));
   }
@@ -265,6 +314,19 @@ export const api = {
     request<TokenResponse>('/hospitals/login', { method: 'POST', body: { registration_number, password } }),
   /** Public (token is sent when present, in case the endpoint is protected). */
   recommend: (b: RecommendRequest) => request<RecommendResponse>('/triage/recommend', { method: 'POST', body: b, auth: 'optional' }),
+  allocateBatch: (b: BatchAllocationRequest) =>
+    request<AllocationBatchResponse>('/triage/allocations/batch', {
+      method: 'POST',
+      body: b,
+    }),
+  rejectAllocation: (id: string, b: AllocationDecisionRequest) =>
+    request<AllocationActionResponse>(`/triage/allocations/${encodeURIComponent(id)}/reject`, { method: 'POST', body: b, auth: true }),
+  replanAllocation: (id: string, b: AllocationReplanRequest) =>
+    request<AllocationActionResponse>(`/triage/allocations/${encodeURIComponent(id)}/replan`, { method: 'POST', body: b }),
+  cancelAllocation: (id: string) =>
+    request<AllocationActionResponse>(`/triage/allocations/${encodeURIComponent(id)}/cancel`, { method: 'POST' }),
+  completeAllocation: (id: string) =>
+    request<AllocationActionResponse>(`/triage/allocations/${encodeURIComponent(id)}/complete`, { method: 'POST' }),
   publicHospitals: () => request<PublicHospitalDTO[]>('/hospitals/public'),
 
   listHospitals: () => request<HospitalDTO[]>('/hospitals/', { auth: true }),
